@@ -25,4 +25,4 @@ __pycache__
 experiments
 .vscode
 *.h5
-
+.gitignore
