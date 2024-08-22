@@ -1,4 +1,3 @@
-data/
 events.out*
 __pycache__
 *.sh
@@ -25,4 +24,8 @@ __pycache__
 experiments
 .vscode
 *.h5
-.gitignore
+*.md
+paradise/Archimed_plugin
+paradise/test
+paradise/previous_resnet
+*.ipynb
