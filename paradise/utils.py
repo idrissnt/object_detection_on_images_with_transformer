@@ -1,24 +1,15 @@
-from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-from ArchiMedConnector.A3_Connector import A3_Connector # import Connector
+import pandas as pd
+import os
 
-def get_data_from_archimed(study_code = '2020-128', dir_to_save = "/home/pyuser/data_1/data_archimed_/"):
-    a3conn= A3_Connector()
+def drop_nan_df(input_dir = 'data_1/labels/paradise_csi', output_dir = 'data_1/labels/paradise_csi_drop_nan'):
 
-    exams = a3conn.getExams(filterStr=f"study.studyCode = '{study_code}'")
-    n = 0
-    for exam in exams:
-        # print(exam["examCode"])
-
-        examinfos = a3conn.getExamFullInfos(
-            exam["examCode"],  # Exam Code
-            # worklistType = 'Serie'
-        )
-
-        fname =  exam["examCode"]
-        a3conn.downloadFiles(
-            examinfos,  # files ids (see node infos)
-            destDir=f"{dir_to_save}{fname}/",
-            progress=False
-        )
-
-
+    df = pd.read_csv(f'{input_dir}.csv')
+    df = pd.DataFrame(data=df, columns=['number','id_number', 'csi_total','csi', 'right_sup', 
+                                                            'left_sup','right_mid',
+                                                            'left_mid','right_mid',])
+    
+    missing_values = df.isnull().sum()
+    # print(missing_values[missing_values > 0])  # Columns with missing values
+    df_cleaned = df.dropna()
+    
+    df_cleaned.to_csv(f'{output_dir}.csv')
