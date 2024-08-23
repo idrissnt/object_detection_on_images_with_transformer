@@ -1,38 +1,36 @@
+import logging
+from joblib import Memory
 import numpy as np
 import pydicom
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split, SubsetRandomSampler
 from PIL import Image
 import glob
 import pandas as pd
 from transformers import AutoImageProcessor
 
-
 class XRayDataset(Dataset):
     def __init__(self):
 
-        data_dirr = 'data_1/images_archimed/*/*' # for the directory 
+        data_dirr_mage = 'data_1/images_archimed/*/*'
+        data_dirr_scores = 'data_1/labels/paradise_csi_drop_nan.csv'
 
-        self.dicom_files_path = glob.glob(data_dirr) # type == list
-        self.image_scores = pd.read_csv('data_1/labels/paradise_csi_drop_nan.csv')
+        dicom_files_path = sorted(glob.glob(data_dirr_mage)) # type == list
+
+        self.image_scores = pd.read_csv(data_dirr_scores)
+        self.dicom_files_path = sorted(list(set([fname for fname in dicom_files_path if 
+                                 int(fname.split('/')[-2].split(' ')[-1].split('-')[-1]) in list(self.image_scores.number)])))
+        
+        self.patient_ids = sorted(list(set([fname.split('/')[-2] for fname in self.dicom_files_path])))
 
     def __len__(self):
         return len(self.dicom_files_path)
 
     def __getitem__(self, idx):
 
-        print(len(self.dicom_files_path))
-
         dicom_file_path = self.dicom_files_path[idx]
-
-        #get scores
         dicom_file_path, scores = get_imag_scores(dicom_file_path, self.image_scores)
-
-        # # Load your DICOM image instead of downloading a sample image
         image = load_dicom_image(dicom_file_path)
-
-        # Check the size of the image
-        # print(image.size)  # (width, height)
 
         # Initialize the processor
         repo = "microsoft/rad-dino"
@@ -42,17 +40,18 @@ class XRayDataset(Dataset):
         inputs = processor(images=image, return_tensors="pt")
         outputs = torch.tensor(scores, dtype=torch.float)
 
-        return inputs, outputs
+        return inputs['pixel_values'].squeeze(0), outputs
 
 def get_imag_scores(img_path, df_scores):
 
     number_img = img_path.split('/')[-2].split('-')[-1]
     number_df = df_scores[df_scores.number == int(number_img)]
 
+    # print(int(number_img)) 
+    # print(df_scores[df_scores.number == int(number_img)])
+
     right_sup ,left_sup = list(number_df.right_sup)[0] , list(number_df.left_sup)[0] 
     right_mid ,left_mid = list(number_df.right_mid)[0] ,list(number_df.left_mid)[0]
-
-    print(img_path, [right_sup ,left_sup ,right_mid ,left_mid])
 
     return img_path, [right_sup ,left_sup ,right_mid ,left_mid]
 
@@ -71,56 +70,48 @@ def load_dicom_image(dicom_file_path: str) -> Image.Image:
 
     return pil_image
 
+# memory = Memory(location='cache_directory', verbose=0) 
+# @memory.cache
 
-# Example: Dataloader
-dataset = XRayDataset()
-x , y = dataset[100]
-print(x, y)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+def get_data(batch_size): 
 
+    data_set = XRayDataset()
+    
+    patient_ids = data_set.patient_ids
+    train_ids, val_ids, test_ids  = random_split(patient_ids, (781, 200, 200))
 
+    #make sure that a each patient id remain a same subsampler
+    dicom_files_path_idx_train = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in train_ids]
+    dicom_files_path_idx_val = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in val_ids]
+    dicom_files_path_idx_test = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in test_ids]
 
+    # Sample elements randomly from a given list of ids, no replacement.   
+    train_subsampler = SubsetRandomSampler(dicom_files_path_idx_train)
+    val_subsampler = SubsetRandomSampler(dicom_files_path_idx_val)
+    test_subsampler = SubsetRandomSampler(dicom_files_path_idx_test)
 
+    logging.info(f'loading X ray images : {len(train_subsampler)} for training, {len(val_subsampler)} for validation and {len(test_subsampler)} for testing...')
+    batch_train_data = DataLoader(
+            data_set,
+            batch_size = batch_size, 
+            sampler=train_subsampler)
 
+    batch_val_data = DataLoader(
+            data_set,
+            batch_size = batch_size, 
+            sampler=val_subsampler)
+    
+    batch_test_data = DataLoader(
+            data_set,
+            batch_size = batch_size,
+            sampler=test_subsampler)
 
+    logging.info(f'done...')
 
+    return batch_train_data, batch_val_data, batch_test_data
 
-
-
-
-
-
-
-
-# # Load your DICOM image instead of downloading a sample image
-# dicom_file_path = "data_1/data_archimed/2020-128 01-0002/1.3.51.0.7.11324537245.60188.18408.42903.58162.20795.51958"
-# image = load_dicom_image(dicom_file_path)
-
-# # Check the size of the image
-# print(image.size)  # (width, height)
-
-# # Initialize the processor and model
-# repo = "microsoft/rad-dino"
-# model = AutoModel.from_pretrained(repo)
-# processor = AutoImageProcessor.from_pretrained(repo)
-
-# # # Preprocess the DICOM image
-# # inputs = processor(images=image, return_tensors="pt")
-# # # print(type(inputs))
-
-# # # Encode the image using the model
-# # with torch.inference_mode():
-# #     outputs = model(**inputs)
-
-# # print(outputs.last_hidden_state.shape)
-# # print(outputs)
-
-# # # Get the CLS embeddings
-# # cls_embeddings = outputs.pooler_output
-# # # print(cls_embeddings.shape)  # (batch_size, num_channels)
-
-
-# # # for name, module in model.named_children():
-# # #     print(f"Layer Name: {name}")
-# # #     print(module)
-# # #     print("=" * 50)
+# # Example: Dataloader
+# dataset = XRayDataset()
+# x , y = dataset[100]
+# print(x, y)
+# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)

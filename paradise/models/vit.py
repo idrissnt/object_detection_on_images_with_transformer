@@ -1,59 +1,56 @@
 
 import torch.nn as nn
 from transformers import AutoModel, ViTModel
-from transformers import AutoImageProcessor
 
 ################################ ViT from microsof for chest radiography (CXR) #####################
 
 # Initialize the processor and model
 repo = "microsoft/rad-dino"
 model = AutoModel.from_pretrained(repo)
-processor = AutoImageProcessor.from_pretrained(repo)
 
-# Access the final MLP layer in the encoder
-class CustomDinov2MLP(nn.Module):
-    def __init__(self):
-        super(CustomDinov2MLP, self).__init__()
-
-        self.fc1 = nn.Linear(in_features=768, out_features=3072, bias=True)
-        self.activation = nn.GELU()
-        self.fc2 = nn.Linear(in_features=3072, out_features=6, bias=True)  # Changed to output 6 value for 6 regions
+class RegressionHead(nn.Module):
+    def __init__(self, input_dim=768, output_dim=1):
+        super(RegressionHead, self).__init__()
+        self.dense = nn.Linear(input_dim, output_dim)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.activation(x)
-        scores = self.fc2(x)  # No activation after this, for regression
-        return scores
+        # x is [batch_size, seq_len, 768]
+        # Take the mean across the sequence dimension (for example, we could also use only the CLS token output)
+        x = x.mean(dim=1)  # [batch_size, 768]
+        x = self.dense(x)  # [batch_size, 4]
+        return x
 
-# Replace the original MLP with the custom one
-for layer in model.encoder.layer:
-    layer.mlp = CustomDinov2MLP()
+class CustomDinoModel(nn.Module):
+    def __init__(self, model):
+        super(CustomDinoModel, self).__init__()
+        self.model = model
+        self.regression_head = RegressionHead(input_dim=768, output_dim=4)
 
-ViTForScoring = model
-
-# Model is now adapted for regression    
-# print(ViTForScoring)
+    def forward(self, kwargs):
+        outputs = self.model(kwargs)  # Get the encoder outputs
+        sequence_output = outputs.last_hidden_state  # or encoder output
+        regression_output = self.regression_head(sequence_output)
+        return regression_output
 
 ########################################################################################
 
 
 ################################ initial ViT from google ###############################
 
-pretrained_model_name='google/vit-base-patch16-224'
-vit = ViTModel.from_pretrained(pretrained_model_name)
+# pretrained_model_name='google/vit-base-patch16-224'
+# vit = ViTModel.from_pretrained(pretrained_model_name)
 
-class ViTForScoring(nn.Module):
-    def __init__(self, pretrained_model_name='google/vit-base-patch16-224'):
-        super(ViTForScoring, self).__init__()
-        self.vit = ViTModel.from_pretrained(pretrained_model_name)
-        self.classifier = nn.Linear(self.vit.config.hidden_size, 6)  # 6 outputs for 6 regions
+# class ViTOutDomainForScoring(nn.Module):
+#     def __init__(self, pretrained_model_name='google/vit-base-patch16-224'):
+#         super(ViTOutDomainForScoring, self).__init__()
+#         self.vit = ViTModel.from_pretrained(pretrained_model_name)
+#         self.classifier = nn.Linear(self.vit.config.hidden_size, 6)  # 6 outputs for 6 regions
 
-    def forward(self, x):
-        outputs = self.vit(x).last_hidden_state[:, 0, :]
-        scores = self.classifier(outputs)
-        return scores
-# Model is now adapted for regression    
-print(ViTForScoring())
-##########################################################################################
-
+#     def forward(self, x):
+#         outputs = self.vit(x).last_hidden_state[:, 0, :]
+#         scores = self.classifier(outputs)
+#         return scores
+# # Model is now adapted for regression    
+# ViTOutOfDomainForScoring = ViTOutDomainForScoring()    
+# ##########################################################################################
 
