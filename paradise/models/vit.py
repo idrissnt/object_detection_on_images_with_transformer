@@ -1,10 +1,10 @@
 
 import torch.nn as nn
-from transformers import AutoModel, ViTModel
+from transformers import AutoModel
 
 ################################ ViT from microsof for chest radiography (CXR) #####################
 
-# Initialize the processor and model
+# Initialize the model
 repo = "microsoft/rad-dino"
 model = AutoModel.from_pretrained(repo)
 
@@ -33,24 +33,4 @@ class CustomDinoModel(nn.Module):
         return regression_output
 
 ########################################################################################
-
-
-################################ initial ViT from google ###############################
-
-# pretrained_model_name='google/vit-base-patch16-224'
-# vit = ViTModel.from_pretrained(pretrained_model_name)
-
-# class ViTOutDomainForScoring(nn.Module):
-#     def __init__(self, pretrained_model_name='google/vit-base-patch16-224'):
-#         super(ViTOutDomainForScoring, self).__init__()
-#         self.vit = ViTModel.from_pretrained(pretrained_model_name)
-#         self.classifier = nn.Linear(self.vit.config.hidden_size, 6)  # 6 outputs for 6 regions
-
-#     def forward(self, x):
-#         outputs = self.vit(x).last_hidden_state[:, 0, :]
-#         scores = self.classifier(outputs)
-#         return scores
-# # Model is now adapted for regression    
-# ViTOutOfDomainForScoring = ViTOutDomainForScoring()    
-# ##########################################################################################
 

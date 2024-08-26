@@ -1,8 +1,11 @@
 import logging
 
+import numpy as np
+
 # import utils
 # from utils.metrics import metric
 from models.vit import CustomDinoModel, model 
+from models.resnet import resnet34
 from utils import RunningAverage
 
 import torch
@@ -31,9 +34,14 @@ class Exp_Main(object):
         self.device = args.device
         model_dict = {
             'Rad_Dino': CustomDinoModel,
-            # 'Initial_ViT': ViTOutOfDomainForScoring
+            'ResNet': resnet34()
         }
-        self.model = model_dict[self.args.model](model).to(self.device)
+
+        if self.args.model == 'ResNet':
+            self.model = model_dict[self.args.model].to(self.device)
+        else: 
+            self.model = model_dict[self.args.model](model).to(self.device)
+        
         self.model_optim = self._select_optimizer()
 
     def _select_optimizer(self):

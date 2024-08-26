@@ -40,15 +40,12 @@ class XRayDataset(Dataset):
         inputs = processor(images=image, return_tensors="pt")
         outputs = torch.tensor(scores, dtype=torch.float)
 
-        return inputs['pixel_values'].squeeze(0), outputs
+        return inputs['pixel_values'].squeeze(0), outputs, dicom_file_path
 
 def get_imag_scores(img_path, df_scores):
 
     number_img = img_path.split('/')[-2].split('-')[-1]
     number_df = df_scores[df_scores.number == int(number_img)]
-
-    # print(int(number_img)) 
-    # print(df_scores[df_scores.number == int(number_img)])
 
     right_sup ,left_sup = list(number_df.right_sup)[0] , list(number_df.left_sup)[0] 
     right_mid ,left_mid = list(number_df.right_mid)[0] ,list(number_df.left_mid)[0]
@@ -80,7 +77,7 @@ def get_data(batch_size):
     patient_ids = data_set.patient_ids
     train_ids, val_ids, test_ids  = random_split(patient_ids, (781, 200, 200))
 
-    #make sure that a each patient id remain a same subsampler
+    #make sure that each patient id remain in the same subsampler
     dicom_files_path_idx_train = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in train_ids]
     dicom_files_path_idx_val = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in val_ids]
     dicom_files_path_idx_test = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in test_ids]

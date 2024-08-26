@@ -3,11 +3,13 @@ import logging
 import shutil
 import traceback
 from matplotlib import pyplot as plt
+import numpy as np
 import pandas as pd
 import os
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 import torch
+from tqdm import tqdm
 
 def drop_nan_df(input_dir = 'data_1/labels/paradise_csi', output_dir = 'data_1/labels/paradise_csi_drop_nan'):
 
@@ -162,3 +164,141 @@ def save_dict_to_json(data, json_path):
     """
     with open(json_path, 'w') as file:
         json.dump(data, file, indent=4)
+
+def save_scores(args, test_data, model, device, dir_to_save_scores):
+
+    dir_to_save_scores = dir_to_save_scores
+
+    if not os.path.exists(dir_to_save_scores):
+        os.mkdir(dir_to_save_scores)
+
+    logging.info("Name of the directory to save scores' image : {}".format(dir_to_save_scores))
+
+    print()
+
+    others_fnames = []
+
+    logging.info(f'Extracting scores from {len(test_data)*args.batch_size} x ray images.')
+
+    pred_ref_scores_and_fnames = []
+    with tqdm(total = len(test_data)) as pbar:
+        for samples_batch in test_data:
+    
+            total_scores = test_data.__len__()
+
+            input_img = samples_batch[0].to(device)
+            ref_scores = samples_batch[1][0]
+            fname = samples_batch[2][0].split('/')[-2]
+
+            output_model = model(input_img)
+
+            try:
+                output_model = model(input_img).squeeze(0)
+                ref_scores = ref_scores.tolist()
+                the_fname = fname
+
+                output_model = [round(val, 2) for val in output_model.tolist()]
+
+                dic = {'predicted_scores': output_model, 'reference_scores': ref_scores, 'fname': the_fname}
+                pred_ref_scores_and_fnames.append(dic)
+
+            except AssertionError as e:
+                print(f'AssertionError : {e}')
+            pbar.update()
+
+        df = pd.DataFrame()
+        for i in range(0,4):
+            predicted_scores = [dic['predicted_scores'][i] for dic in pred_ref_scores_and_fnames]
+            reference_scores = [dic['reference_scores'][i] for dic in pred_ref_scores_and_fnames ]
+            fname = [dic['fname'] for dic in pred_ref_scores_and_fnames]
+
+            diff = [round(val, 3) for val in  stat_difference(predicted_scores, reference_scores)]
+
+            if i ==0:
+                df['fname']=fname  
+                df['right_sup_pred'] = predicted_scores
+                df['right_sup_ref'] = reference_scores
+                df["diff_right_sup"] = diff
+            if i ==1:
+                df['left_sup_pred'] = predicted_scores
+                df['left_sup_ref'] = reference_scores
+                df["diff_left_sup"] = diff
+            elif i==2:
+                df['right_mid_pred'] = predicted_scores
+                df['right_mid_ref'] = reference_scores
+                df["diff_right_mid"] = diff
+            elif i == 3:
+                df['left_mid_pred'] = predicted_scores
+                df['left_mid_ref'] = reference_scores
+                df["diff_left_mid"] = diff
+
+        df.to_csv(f"{dir_to_save_scores}/scores_images.csv")
+        logging.info("Done... {}/{} scores extracted".format(len(pred_ref_scores_and_fnames), total_scores))
+        print()
+        
+    file = pd.DataFrame()  
+    file['fname'] = [dic['fname'] for dic in others_fnames]
+    file['predicted_mask'] = [dic['predicted_mask'] for dic in others_fnames]
+    file['reference_mask'] = [dic['reference_mask'] for dic in others_fnames]
+
+    file.to_csv('{}/not_usable_fnames.csv'.format(dir_to_save_scores))
+
+def stat_difference(actual, predicted):
+    diffs = [val1 - val2 for val1, val2 in zip(actual, predicted)]
+    return diffs
+
+def convert_tensorbord_to_csv(folderpath, folder_to_save):
+
+    # Extraction function
+    def tflog2pandas(path):
+        runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
+        try:
+            event_acc = EventAccumulator(path)   
+            event_acc.Reload()
+            tags = event_acc.Tags()["scalars"]
+            for tag in tags:
+                event_list = event_acc.Scalars(tag)
+                values = list(map(lambda x: x.value, event_list))
+                step = list(map(lambda x: x.step, event_list))
+                r = {"metric": [tag] * len(step), "value": values, "step": step}
+                r = pd.DataFrame(r)
+
+                runlog_data = pd.concat([runlog_data, r])
+
+        # Dirty catch of DataLossError
+        except Exception:
+            print("Event file possibly corrupt: {}".format(path))
+            traceback.print_exc()
+        return runlog_data
+    path=folderpath #folderpath
+    df=tflog2pandas(path)
+    df.to_csv(f'{folder_to_save}/loss_curve.csv') 
+
+def plot_tensorbord(csv_file, png_file, title, y_ax):
+    data = pd.read_csv(csv_file)
+
+    loss_train = list((data[data.metric.isin(['/loss-train'])].value))
+    loss_val =  list((data[data.metric.isin(['/loss-val'])].value))
+
+    min_train = '{:05.3f}'.format(min(loss_train))
+    min_val = '{:05.3f}'.format(min(loss_val))
+
+    plt.figure()
+    plt.title(f'{title} (val : {min_val}, train : {min_train})')
+    plt.plot(loss_train, label='Training')  
+    plt.plot(loss_val, label='Validation')  
+    plt.xlabel('Epochs')
+    plt.ylabel(y_ax)
+    plt.legend()
+    plt.savefig(png_file)
+    plt.close()
+
+def plot_box_plot(data_list, data_name, fn_save):
+
+    plt.figure()
+    plt.title("ResNet's predictions vs automatics scores on test set")
+    plt.boxplot(data_list,  notch = True, showfliers=True)
+    # plt.boxplot(data_list,  notch = True, showfliers=False)
+    plt.xticks(np.arange(len(data_name))+1,data_name)
+    plt.ylabel('manual vs automatic')
+    plt.savefig(f'{fn_save}_box_plot.png')
