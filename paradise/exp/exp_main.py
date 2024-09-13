@@ -98,17 +98,17 @@ class Exp_Main(object):
             nan_val = 0
             for i, samples_batch in enumerate(batch_train_data): 
 
-                input_sig = Variable(samples_batch[0]).to(self.device)
-                target_sig = Variable(samples_batch[1]).to(self.device)
+                input_img = Variable(samples_batch[0]).to(self.device)
+                target_img = Variable(samples_batch[1]).to(self.device)
 
-                if torch.isnan(input_sig).any():
+                if torch.isnan(input_img).any():
                     nan_val=+1
                     continue
                 
-                output_batch_all_lead = self.model(input_sig)
+                output_batch_all_lead = self.model(input_img)
 
                 loss_fn = self._select_criterion()
-                loss = loss_fn(output_batch_all_lead, target_sig)
+                loss = loss_fn(output_batch_all_lead, target_img)
 
                 if self.args.use_amp:
                     # back propagration with scaled loss

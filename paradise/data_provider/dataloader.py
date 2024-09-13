@@ -1,27 +1,51 @@
-import logging
-from joblib import Memory
-import numpy as np
-import pydicom
-import torch
-from torch.utils.data import Dataset, DataLoader, random_split, SubsetRandomSampler
-from PIL import Image
+import os
 import glob
+import logging
+
+import torch
+import pydicom
+import numpy as np
 import pandas as pd
+from PIL import Image
+from PIL import ImageOps
+import matplotlib.pyplot as plt
 from transformers import AutoImageProcessor
+from torch.utils.data import Dataset, DataLoader, random_split, SubsetRandomSampler
+
+from tqdm import tqdm
+from joblib import Memory
+
+
+# new_list = []
+# for val in dicom_files_path:
+#     print(val)
+#     if str(val.split('-')[-1]) not in extrat_files:
+#         new_list.append(val)
 
 class XRayDataset(Dataset):
     def __init__(self):
 
-        data_dirr_mage = 'data_1/images_archimed/*/*'
+        extrat_files = ["0528", "0725", "0760", "0763", "0875", "0933", "0994", "1110", "1111", "1283", "1294", "1329",
+                "1349", "1353", "1365", "1424", "1437", "1520", "1708", "1730", "1739", "1741", "1743",
+                "1774", "1776", "1821", "1832", "1833", "1834", "1842", "1877", "1891", "1892", "1899",
+                "1904", "1911", "1916", "1924", "1930", "1942", "1943", "1959", "1977", "1979", "2017",
+                "2022", "2087", "2091", "2157", "2158", "2176", "2185", "2190", "2192", "2196", "2233",
+                "2235", "2242", "2255", "2267", "2281"]
+
+        data_dirr_mage = 'data_1/new_pil_images/*/*'
         data_dirr_scores = 'data_1/labels/paradise_csi_drop_nan.csv'
 
         dicom_files_path = sorted(glob.glob(data_dirr_mage)) # type == list
 
+        new_dicom_files_path = [val for val in dicom_files_path if str(val.split('/')[-2].split('-')[-1]) not in extrat_files]
+
         self.image_scores = pd.read_csv(data_dirr_scores)
-        self.dicom_files_path = sorted(list(set([fname for fname in dicom_files_path if 
+        self.dicom_files_path = sorted(list(set([fname for fname in new_dicom_files_path if 
                                  int(fname.split('/')[-2].split(' ')[-1].split('-')[-1]) in list(self.image_scores.number)])))
-        
+                
         self.patient_ids = sorted(list(set([fname.split('/')[-2] for fname in self.dicom_files_path])))
+
+        self.lists = []
 
     def __len__(self):
         return len(self.dicom_files_path)
@@ -30,17 +54,28 @@ class XRayDataset(Dataset):
 
         dicom_file_path = self.dicom_files_path[idx]
         dicom_file_path, scores = get_imag_scores(dicom_file_path, self.image_scores)
-        image = load_dicom_image(dicom_file_path)
+
+        pil_images = Image.open(dicom_file_path)
 
         # Initialize the processor
         repo = "microsoft/rad-dino"
         processor = AutoImageProcessor.from_pretrained(repo)
 
-        # Preprocess the DICOM image
-        inputs = processor(images=image, return_tensors="pt")
+        # Preprocess the DICOM image 
+        """The processor takes a PIL image, performs resizing, center-cropping, and
+        intensity normalization using stats from MIMIC-CXR, and returns a
+        dictionary with a PyTorch tensor ready for the encoder"""
+        inputs_dic = processor(images=pil_images, return_tensors="pt")
+        inputs = inputs_dic['pixel_values'].squeeze()
         outputs = torch.tensor(scores, dtype=torch.float)
 
-        return inputs['pixel_values'].squeeze(0), outputs, dicom_file_path
+        plt.figure
+        plt.imshow(inputs[0], cmap='gray')
+        plt.title('image preprocess for the model input (from rad-dino)')
+        plt.savefig('wkdir/pic/image_process_.png')
+        plt.close()
+
+        return inputs, outputs, dicom_file_path
 
 def get_imag_scores(img_path, df_scores):
 
@@ -52,30 +87,17 @@ def get_imag_scores(img_path, df_scores):
 
     return img_path, [right_sup ,left_sup ,right_mid ,left_mid]
 
-def load_dicom_image(dicom_file_path: str) -> Image.Image:
 
-    """Load a DICOM file and convert it to a PIL image."""
-    dicom_data = pydicom.dcmread(dicom_file_path)
-    image_data = dicom_data.pixel_array
-
-    # Normalize the pixel values to the 0-255 range (8-bit)
-    image_data = image_data - np.min(image_data)
-    image_data = (image_data / np.max(image_data) * 255).astype(np.uint8)
-
-    # Convert the numpy array to a PIL image
-    pil_image = Image.fromarray(image_data)
-
-    return pil_image
-
-# memory = Memory(location='cache_directory', verbose=0) 
-# @memory.cache
+memory = Memory(location='cache_directory', verbose=0) 
+@memory.cache
 
 def get_data(batch_size): 
 
     data_set = XRayDataset()
     
     patient_ids = data_set.patient_ids
-    train_ids, val_ids, test_ids  = random_split(patient_ids, (781, 200, 200))
+    train_ids, val_ids, test_ids  = random_split(patient_ids, (725, 200, 200))
+    # train_ids, val_ids, test_ids  = random_split(patient_ids, (781, 200, 200))
 
     #make sure that each patient id remain in the same subsampler
     dicom_files_path_idx_train = [idx for idx, fname in enumerate(data_set.dicom_files_path) if fname.split('/')[-2] in train_ids]
@@ -102,13 +124,24 @@ def get_data(batch_size):
             data_set,
             batch_size = batch_size,
             sampler=test_subsampler)
+    print()
+    logging.info(f'for training...')
+    batch_train_data = [samples_batch for _, samples_batch in enumerate(tqdm(batch_train_data))]
+    print()
+    logging.info(f'for validation...')
+    batch_val_data = [samples_batch for _, samples_batch in enumerate(tqdm(batch_val_data))]
+    print()
+    logging.info(f'for testing...')
+    batch_test_data = [samples_batch for _, samples_batch in enumerate(tqdm(batch_test_data))]
 
+    print()
     logging.info(f'done...')
 
     return batch_train_data, batch_val_data, batch_test_data
 
-# # Example: Dataloader
-# dataset = XRayDataset()
-# x , y = dataset[100]
-# print(x, y)
+dataset = XRayDataset()
+x, y, fname = dataset[5]
+print(x.shape, y.shape, fname)
+# x = [dataset[i] for i in tqdm(range((len(dataset.dicom_files_path))))]
+
 # dataloader = DataLoader(dataset, batch_size=32, shuffle=True)

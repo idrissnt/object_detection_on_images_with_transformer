@@ -1,4 +1,3 @@
-
 import torch.nn as nn
 from transformers import AutoModel
 
@@ -33,4 +32,8 @@ class CustomDinoModel(nn.Module):
         return regression_output
 
 ########################################################################################
+
+
+###################### base ViT implement from scratch #######################################
+    
 
