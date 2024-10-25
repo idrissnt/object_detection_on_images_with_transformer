@@ -5,6 +5,10 @@ import traceback
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
+
+from sklearn.metrics import confusion_matrix, balanced_accuracy_score, precision_recall_fscore_support
+
 import os
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -14,9 +18,9 @@ from tqdm import tqdm
 def drop_nan_df(input_dir = 'data_1/labels/paradise_csi', output_dir = 'data_1/labels/paradise_csi_drop_nan'):
 
     df = pd.read_csv(f'{input_dir}.csv')
-    df = pd.DataFrame(data=df, columns=['number','id_number', 'csi_total','csi', 'right_sup', 
-                                                            'left_sup','right_mid',
-                                                            'left_mid','right_mid',])
+    # df = pd.DataFrame(data=df, columns=['number','id_number', 'csi_total','csi', 'right_sup', 
+    #                                                         'left_sup','right_mid',
+    #                                                         'left_mid','right_mid',])
     
     missing_values = df.isnull().sum()
     # print(missing_values[missing_values > 0])  # Columns with missing values
@@ -302,3 +306,14 @@ def plot_box_plot(data_list, data_name, fn_save):
     plt.xticks(np.arange(len(data_name))+1,data_name)
     plt.ylabel('manual vs automatic')
     plt.savefig(f'{fn_save}_box_plot.png')
+
+def conf_matrix(targets, predicted_classes):
+
+    cm = confusion_matrix(targets, predicted_classes)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.show()
+
+
+

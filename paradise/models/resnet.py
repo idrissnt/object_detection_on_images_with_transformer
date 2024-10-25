@@ -165,14 +165,14 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((3, 2))
         self.avgpool1 = nn.AdaptiveAvgPool2d((1, 1))
         
-        # self.fc0 = nn.Linear(512 * block.expansion, num_classes)
-        # self.fc1 = nn.Linear(512 * block.expansion, num_classes)
-        # self.fc2 = nn.Linear(512 * block.expansion, num_classes)
-        # self.fc3 = nn.Linear(512 * block.expansion, num_classes)
-        # self.fc4 = nn.Linear(512 * block.expansion, num_classes)
-        # self.fc5 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc0 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc1 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc2 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc3 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc4 = nn.Linear(512 * block.expansion, num_classes)
+        self.fc5 = nn.Linear(512 * block.expansion, num_classes)
         
-        self.fcMSE = nn.Linear(512 * block.expansion, 4)
+        self.fcMSE = nn.Linear(512 * block.expansion, 6)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -236,7 +236,9 @@ class ResNet(nn.Module):
         #x = torch.flatten(x, 1)
         #x = self.fc(x)
 
-        # act_batch_size = x.size(0)
+        act_batch_size = x.size(0)
+
+        # print(x.shape)
 
         # #Right superior
         # out0 = self.fc0(x[:,:,0,1].view(act_batch_size,-1))
@@ -259,7 +261,9 @@ class ResNet(nn.Module):
         x = self.avgpool1(x)
         x = torch.flatten(x, 1)
         outMSE = self.fcMSE(x)
-        
+
+        # print(out0.shape, out1.shape, out2.shape, out3.shape, out4.shape, out5.shape, outMSE.shape)
+
         # return out0,out1,out2,out3,out4,out5,outMSE
         return outMSE
 
@@ -293,6 +297,3 @@ def resnet34(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
     """
     return _resnet('resnet34', BasicBlock, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
-
-
-
