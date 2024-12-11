@@ -45,9 +45,15 @@ class Exp_Main(object):
         model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _calc_loss_batch(self, input_batch, target_batch, model):
-        logits = model(input_batch)
-        loss = nn.functional.cross_entropy(logits, target_batch)
+    def _calc_loss_batch(self, input_batch, target_batch, target_csi_regions, model):
+
+        logit_class, logit_csi_scores, logit_mean_csi = model(input_batch)
+
+        loss_csi_score = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
+        loss_class = nn.functional.cross_entropy(logit_class, target_batch)
+
+        loss = loss_class + loss_csi_score
+
         return loss
 
     def validation(self, vali_loader):
@@ -63,12 +69,13 @@ class Exp_Main(object):
 
                     input_img = Variable(samples_batch[0]).to(self.device)
                     target_class = Variable(samples_batch[1]).to(self.device)
+                    target_csi_regions = Variable(samples_batch[2]).type(torch.FloatTensor).to(self.device)
 
                     if torch.isnan(input_img).any():
                         nan_val=+1
                         continue
 
-                    loss = self._calc_loss_batch(input_img, target_class, self.model)
+                    loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, self.model)
 
                     total_loss.append(loss)
                     pbar.update()
@@ -91,12 +98,15 @@ class Exp_Main(object):
 
                 input_img = Variable(samples_batch[0]).to(self.device)
                 target_class = Variable(samples_batch[1]).to(self.device)
+                target_csi_regions = Variable(samples_batch[2]).type(torch.FloatTensor).to(self.device)
+
+                # input_chexnet, label, csi_regions, mean_csi, classe = []
 
                 if torch.isnan(input_img).any():
                     nan_val=+1
                     continue
                 
-                loss = self._calc_loss_batch(input_img, target_class, self.model)
+                loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, self.model)
 
                 # back propagration : calculating the gradients
                 loss.backward(retain_graph=True) 
@@ -158,9 +168,9 @@ class Exp_Main(object):
                     target_batch = target_batch.to(device)
 
                     with torch.no_grad():
-                        logits = model(input_batch)
+                        logit_class, logit_csi_scores, logit_mean_csi = model(input_batch)
                     # proba = torch.softmax(logits, dim=-1)
-                    predicted_labels = torch.argmax(logits, dim=-1)
+                    predicted_labels = torch.argmax(logit_class, dim=-1)
 
                     class_target.append(target_batch.cpu().numpy().tolist())
                     class_pred.append(predicted_labels.cpu().numpy().tolist())

@@ -253,52 +253,6 @@ def stat_difference(actual, predicted):
     diffs = [val1 - val2 for val1, val2 in zip(actual, predicted)]
     return diffs
 
-# def convert_tensorbord_to_csv(folderpath, folder_to_save):
-
-#     # Extraction function
-#     def tflog2pandas(path):
-#         runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
-#         try:
-#             event_acc = EventAccumulator(path)   
-#             event_acc.Reload()
-#             tags = event_acc.Tags()["scalars"]
-#             for tag in tags:
-#                 event_list = event_acc.Scalars(tag)
-#                 values = list(map(lambda x: x.value, event_list))
-#                 step = list(map(lambda x: x.step, event_list))
-#                 r = {"metric": [tag] * len(step), "value": values, "step": step}
-#                 r = pd.DataFrame(r)
-
-#                 runlog_data = pd.concat([runlog_data, r])
-
-#         # Dirty catch of DataLossError
-#         except Exception:
-#             print("Event file possibly corrupt: {}".format(path))
-#             traceback.print_exc()
-#         return runlog_data
-#     path=folderpath #folderpath
-#     df=tflog2pandas(path)
-#     df.to_csv(f'{folder_to_save}/loss_curve.csv') 
-
-# def plot_tensorbord(csv_file, png_file, title, y_ax):
-#     data = pd.read_csv(csv_file)
-
-#     loss_train = list((data[data.metric.isin(['/loss-train'])].value))
-#     loss_val =  list((data[data.metric.isin(['/loss-val'])].value))
-
-#     min_train = '{:05.3f}'.format(min(loss_train))
-#     min_val = '{:05.3f}'.format(min(loss_val))
-
-#     plt.figure()
-#     plt.title(f'{title} (val : {min_val}, train : {min_train})')
-#     plt.plot(loss_train, label='Training')  
-#     plt.plot(loss_val, label='Validation')  
-#     plt.xlabel('Epochs')
-#     plt.ylabel(y_ax)
-#     plt.legend()
-#     plt.savefig(png_file)
-#     plt.close()
-
 def plot_box_plot(data_list, data_name, fn_save):
 
     plt.figure()
@@ -339,3 +293,9 @@ def add_class_for_scores():
 
     print(df['classes_label'].value_counts())
 
+def replace_nan(file_csv):
+    paradise_csi = pd.read_csv(file_csv)
+    df = pd.DataFrame(paradise_csi)
+    df.replace(r'^\s*$', float('nan'), regex=True)
+    df.fillna(0, inplace=True)
+    df.to_csv('yep_.csv')

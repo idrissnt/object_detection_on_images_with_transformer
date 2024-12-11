@@ -29,19 +29,19 @@ class CustomDinoModel(nn.Module):
 
         # change the classification layer
         self.classification_head =  nn.Linear(768, 3) #ClassificationHead(input_dim=768, output_dim=3)
-        # self.head_csi =  nn.Linear(768, 6) #head_csi(input_dim=768, output_dim=6), for the 6 image regions
+        self.head_csi =  nn.Linear(768, 6) #head_csi(input_dim=768, output_dim=6), for the 6 image regions
 
     def forward(self, kwargs): # since the input a dic, we reference the input as kwargs (key word arguments)
         
         outputs = self.model(kwargs)  # Get the encoder outputs
         cls_embeddings = outputs.pooler_output
 
-        classification_output = self.classification_head(cls_embeddings)
-        # csi_scores = self.head_csi(cls_embeddings)
-        # mean_csi = csi_scores.mean(dim=1, keepdim=True)
+        csi_scores = self.head_csi(cls_embeddings)
+        mean_csi = csi_scores.mean(dim=1, keepdim=True)
 
-        # return classification_output, csi_scores, mean_csi
-        return classification_output
+        classification_output = self.classification_head(cls_embeddings)
+
+        return classification_output, csi_scores, mean_csi
 
 def extract_zone_features(zones, feature_extractor, model):
     zone_features = []

@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser(description='NN for classifying X ray images')
 parser.add_argument('--device', type=str, default=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
 parser.add_argument('--experiment_path', type=str, default='experiments/', help='path to save the weight of the model')
-parser.add_argument('--model', type=str, default='cheXNet',
+parser.add_argument('--model', type=str, default='Rad_Dino',
                     help='model name, options: [Rad_Dino, cheXNet, ResNet, initial_vit]')
 
 # data loader
@@ -69,8 +69,8 @@ if __name__ == '__main__':
 
     logging.info("Starting with... {} model".format(args.model))
 
-    train = False
-    # train = True
+    # train = False
+    train = True
 
     if train == True:
         best_loss = 10
