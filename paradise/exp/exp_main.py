@@ -1,30 +1,28 @@
 import logging
 
-import numpy as np
+from PIL import Image
+import pandas as pd
+from transformers import AutoImageProcessor
 
-# import utils
-# from utils.metrics import metric
-from models.vit_rad_dino import CustomDinoModel, model 
+from models.vit_rad_dino import CustomDinoModel 
 from models.resnet import resnet34
 from models.vision_trans import initial_vit
+from models.cheXNet import pretrained_model
 from utils import RunningAverage
 
+from itertools import chain
 import torch
-
 import torch.nn as nn
 from tqdm import tqdm
 from torch import optim
 from torch.autograd import Variable
-
-from torch.nn import functional as F
+from sklearn.metrics import roc_auc_score
 
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.determinstic = True
 torch.multiprocessing.set_sharing_strategy('file_system')
 
-import os
 import warnings
-
 warnings.filterwarnings('ignore')
 
 
@@ -34,155 +32,57 @@ class Exp_Main(object):
         self.args = args
         self.device = args.device
         model_dict = {
-            'Rad_Dino': CustomDinoModel,
+            'Rad_Dino': CustomDinoModel(),
             'ResNet': resnet34(),
-            'initial_vit' : initial_vit
+            'initial_vit' : initial_vit,
+            'cheXNet' : pretrained_model
         }
 
-        if self.args.model == 'ResNet':
-            self.model = model_dict[self.args.model].to(self.device)
-        elif self.args.model == 'Rad_Dino': 
-            self.model = model_dict[self.args.model](model).to(self.device)
-        elif self.args.model == 'initial_vit':
-            self.model = model_dict[self.args.model].to(self.device)
-        
+        self.model = model_dict[self.args.model].to(self.device)
         self.model_optim = self._select_optimizer()
 
     def _select_optimizer(self):
         model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _select_criterion(self, all_class_weights):
-        # criterion = nn.MSELoss()
+    def _calc_loss_batch(self, input_batch, target_batch, model):
+        logits = model(input_batch)
+        loss = nn.functional.cross_entropy(logits, target_batch)
+        return loss
 
-        # w_right_sup, w_left_sup =  all_class_weights[0].to(self.device), all_class_weights[1].to(self.device)
-        # w_right_mid, w_left_mid= all_class_weights[2].to(self.device), all_class_weights[3].to(self.device)
-        # w_right_inf, w_left_inf = all_class_weights[4].to(self.device), all_class_weights[5].to(self.device)
-        
-        # criterion_right_sup = nn.CrossEntropyLoss(weight=w_right_sup)
-        # criterion_left_sup  = nn.CrossEntropyLoss(weight=w_left_sup)
-        # criterion_right_mid = nn.CrossEntropyLoss(weight=w_right_mid)
-        # criterion_left_mid  = nn.CrossEntropyLoss(weight=w_left_mid)
-        # criterion_right_inf = nn.CrossEntropyLoss(weight=w_right_inf)
-        # criterion_left_inf  = nn.CrossEntropyLoss(weight=w_left_inf)
-
-        criterion_right_sup = nn.CrossEntropyLoss()
-        criterion_left_sup  = nn.CrossEntropyLoss()
-        criterion_right_mid = nn.CrossEntropyLoss()
-        criterion_left_mid  = nn.CrossEntropyLoss()
-        criterion_right_inf = nn.CrossEntropyLoss()
-        criterion_left_inf  = nn.CrossEntropyLoss()
-
-        return [criterion_right_sup, criterion_left_sup, criterion_right_mid, criterion_left_mid, criterion_right_inf, criterion_left_inf]
-
-    def run_model(self, model, x):
-        outputs = model(x)
-        return outputs
-
-    # def validation(self, model , vali_loader, all_loss_fn):
-    #     print()
-    #     logging.info("Validation...")
-    #     total_loss = []
-    #     model.eval()
-    #     with torch.no_grad():
-    #         nan_val = 0
-    #         with tqdm(total=len(vali_loader)) as pbar:
-                    
-    #             for samples_batch in vali_loader:
-
-    #                 input_img = Variable(samples_batch[0]).to(self.device)
-    #                 target_scores = samples_batch[1].type(torch.LongTensor)
-    #                 target_scores = Variable(target_scores).to(self.device)
-    #                 # target_scores = Variable(samples_batch[1]).to(self.device)
-
-    #                 if torch.isnan(input_img).any():
-    #                     nan_val=+1
-    #                     continue
-
-    #                 pred_1, pred_2, pred_3, pred_4= self.model(input_img)
-
-    #                 all_pred = [pred_1, pred_2, pred_3, pred_4]
-    #                 loss = sum([all_loss_fn[i](all_pred[i], target_scores[:,i]) for i in range(4)])
-
-    #                 all_pred = [torch.argmax(F.softmax(val, dim=1), dim=1) for val in all_pred]
-    #                 print(all_pred[0])
-    #                 print(target_scores.permute(1,0)[0])
-
-    #                 # pred_1, pred_2, pred_3, pred_4, pred_5, pred_6 = self.model(input_img)
-    #                 # all_pred = [pred_1, pred_2, pred_3, pred_4, pred_5, pred_6]
-    #                 loss = sum([all_loss_fn[i](all_pred[i], target_scores[:,i]) for i in range(4)])
-
-    #                 total_loss.append(loss)
-    #                 pbar.update()
-
-    #         total_loss = torch.mean(torch.tensor(total_loss))
-    #         logging.info("- Eval loss : {:05.3f}".format(total_loss.item()))
-    #         logging.info("- number of files used for validation which contain NaN value : {}".format(nan_val))
-    #         return total_loss
-        
-
-    def validation(self, model , vali_loader, all_loss_fn):
+    def validation(self, vali_loader):
         print()
         logging.info("Validation...")
         total_loss = []
-        model.eval()
+        self.model.eval()
         with torch.no_grad():
             nan_val = 0
             with tqdm(total=len(vali_loader)) as pbar:
-                
-                all_right_sup_pred , all_left_sup_pred , all_right_mid_pred , all_left_mid_pred = [],[], [], []
-                all_right_sup_target , all_left_sup_target , all_right_mid_target , all_left_mid_target = [],[], [], []
-
+                    
                 for samples_batch in vali_loader:
 
                     input_img = Variable(samples_batch[0]).to(self.device)
-                    target_scores = samples_batch[1].type(torch.LongTensor)
-                    target_scores = Variable(target_scores).to(self.device).permute(1,0)
-                    # target_scores = Variable(samples_batch[1]).to(self.device)
+                    target_class = Variable(samples_batch[1]).to(self.device)
 
                     if torch.isnan(input_img).any():
                         nan_val=+1
                         continue
 
-                    pred_1, pred_2, pred_3, pred_4= self.model(input_img)
-                    all_pred = [pred_1, pred_2, pred_3, pred_4]
+                    loss = self._calc_loss_batch(input_img, target_class, self.model)
 
-                    all_pred = [torch.argmax(F.softmax(val, dim=1), dim=1) for val in all_pred]
-
-                    # right_sup_target = target_scores[0]
-                    # left_sup_target = target_scores[1]
-                    # right_mid_target = target_scores[2]
-                    # left_mid_target = target_scores[3]
-
-                    # right_sup_pred = all_pred[0]
-                    # left_sup_pred = all_pred[1]
-                    # right_mid_pred = all_pred[2]
-                    # left_mid_pred = all_pred[3]
-
-                    all_right_sup_pred.append(target_scores[0])
-                    all_left_sup_pred.append(target_scores[1])
-                    all_right_mid_pred.append(target_scores[2])
-                    all_left_mid_pred.append(target_scores[3])
-
-                    all_right_sup_target.append(all_pred[0])
-                    all_left_sup_target.append(all_pred[1])
-                    all_right_mid_target.append(all_pred[2])
-                    all_left_mid_target.append(all_pred[3])
-
-                    # print(all_pred)
-                    # print(target_scores.shape)
-
+                    total_loss.append(loss)
                     pbar.update()
-            return all_right_sup_pred , all_left_sup_pred , all_right_mid_pred , all_left_mid_pred, all_right_sup_target , all_left_sup_target , all_right_mid_target , all_left_mid_target
 
-    def train_and_validation(self, batch_train_data, batch_val_data, all_class_weights):
+            total_loss = torch.mean(torch.tensor(total_loss))
+            logging.info("- Eval loss : {:05.3f}".format(total_loss.item()))
+            logging.info("- number of files used for validation which contain NaN value : {}".format(nan_val))
+            return total_loss
+
+    def train_and_validation(self, batch_train_data, batch_val_data):
 
         logging.info("Training...")
         loss_avg = RunningAverage()
         self.model.train()
-
-        if self.args.use_amp:
-            scaler = torch.cuda.amp.GradScaler()
 
         with tqdm(total=len(batch_train_data)) as pbar:
                 
@@ -190,65 +90,214 @@ class Exp_Main(object):
             for i, samples_batch in enumerate(batch_train_data): 
 
                 input_img = Variable(samples_batch[0]).to(self.device)
-                target_scores = samples_batch[1].type(torch.LongTensor)
-                target_scores = Variable(target_scores).to(self.device)
-                # target_scores = Variable(samples_batch[1]).to(self.device)
+                target_class = Variable(samples_batch[1]).to(self.device)
 
                 if torch.isnan(input_img).any():
                     nan_val=+1
                     continue
                 
-                # pred_1, pred_2, pred_3, pred_4, pred_5, pred_6 = self.model(input_img)
-                pred_1, pred_2, pred_3, pred_4 = self.model(input_img)
-                # all_pred = [pred_1, pred_2, pred_3, pred_4, pred_5, pred_6]
-                all_pred = [pred_1, pred_2, pred_3, pred_4]
+                loss = self._calc_loss_batch(input_img, target_class, self.model)
 
-                all_loss_fn = self._select_criterion(all_class_weights)
+                # back propagration : calculating the gradients
+                loss.backward(retain_graph=True) 
 
-                # loss = all_loss_fn[1](all_pred[1], target_scores[:,1])
-                loss = sum([all_loss_fn[i](all_pred[i], target_scores[:,i]) for i in range(4)])
-
-                if self.args.use_amp:
-                    # back propagration with scaled loss
-                    scaler.scale(loss).backward(retain_graph=False)
-
-                    # Unscales the gradients and clip them
-                    scaler.unscale_(self.model_optim)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.1)
-
-                    # optimizer step
-                    scaler.step(self.model_optim)
-
-                    # clear gradients
-                    self.model_optim.zero_grad()
-
-                    #update the scale for next iteration
-                    scaler.update()
-                else:
-                    # back propagration : calculating the gradients
-                    loss.backward(retain_graph=False) 
-
-                    # Update model parameters
-                    self.model_optim.step() 
-                
-                    # Zeo gradient
-                    self.model_optim.zero_grad()
+                # Update model parameters
+                self.model_optim.step() 
+            
+                # Zero gradient
+                self.model_optim.zero_grad()
 
                 # progress bar
                 loss_avg.update(loss.item()) 
                 pbar.set_postfix(loss='{:05.3f}'.format(loss_avg()))
-                pbar.update()
+                pbar.update()   
 
             logging.info("- number of files used for training which contain NaN value : {}".format(nan_val))
-            logging.info("Loss parameters: {}".format(list(all_loss_fn[0].parameters())))
+            # logging.info("Loss parameters: {}".format(list(loss.parameters())))
             logging.info("Loss train: {:05.3f}".format(loss_avg()))
 
         train_loss = loss_avg()
 
-        validation_loss = self.validation(self.model, batch_val_data, all_loss_fn)
+        validation_loss = self.validation(batch_val_data)
 
-        return train_loss, validation_loss, self.model_optim, self.model, all_loss_fn
+        print()
+        logging.info('Computing accuracy...')
+        train_accuracy, class_target_train, class_pred_train = self.calc_accuracy_loader(batch_train_data, self.model, self.device, 'Training', [], [])
+        val_accuracy, class_target_val, class_pred_val = self.calc_accuracy_loader(batch_val_data, self.model, self.device, 'Validation', [], [])
 
+        df = pd.DataFrame()
+        df['class_target_train'] = list(chain(*class_target_train))
+        df['class_pred_train'] = list(chain(*class_pred_train))
+
+        df_val = pd.DataFrame()
+        df_val['class_target_val'] = list(chain(*class_target_val))
+        df_val['class_pred_val'] = list(chain(*class_pred_val))
+
+        df.to_csv('train_classes.csv')
+        df_val.to_csv('val_classes.csv')
+
+        logging.info("Train accuracy: {:.2f}%".format(train_accuracy*100))
+        logging.info("Val accuracy: {:.2f}%".format(val_accuracy*100))
+
+        return train_loss, validation_loss, train_accuracy, val_accuracy
         
+    def calc_accuracy_loader(self, data_loader, model, device, accuracy_name, class_target:list, class_pred:list):
 
+        model.to(device)
+
+        model.eval()
+        correct_predictions, num_examples = 0, 0
+
+        num_batches = len(data_loader)
+
+        with tqdm(total=len(data_loader)) as pbar:
+            for i, samples_batch  in enumerate(data_loader):
+                input_batch, target_batch = samples_batch[0], samples_batch[1]
+                if i < num_batches:
+                    input_batch = input_batch.to(device)
+                    target_batch = target_batch.to(device)
+
+                    with torch.no_grad():
+                        logits = model(input_batch)
+                    # proba = torch.softmax(logits, dim=-1)
+                    predicted_labels = torch.argmax(logits, dim=-1)
+
+                    class_target.append(target_batch.cpu().numpy().tolist())
+                    class_pred.append(predicted_labels.cpu().numpy().tolist())
+
+                    num_examples += predicted_labels.shape[0]
+                    correct_predictions += (
+                        (predicted_labels == target_batch).sum().item()
+                    )
+
+                else:
+                    break
+
+                pbar.update()
+
+        accuracy = correct_predictions / num_examples
+        # print(f"{accuracy_name} accuracy: {accuracy*100:.2f}%")
+
+        return accuracy, class_target, class_pred
+    
+    def calc_loss_loader(self, data_loader, model, device):
+
+        model.to(device)
+        total_loss = 0.
+
+        if len(data_loader) == 0:
+            return float("nan")
+        
+        num_batches = len(data_loader)
+
+        for i, (input_batch, target_batch) in enumerate(data_loader):
+            if i < num_batches:
+                loss = self._calc_loss_batch(
+                    input_batch, target_batch, model, device
+                )
+                total_loss += loss.item()
+            else:
+                break
+        return total_loss / num_batches
+    
+    def classify_review(self, model, dicom_file_path, data_dirr_classes):
+
+        model.eval()
+
+        # dicom_file_path = 'data_1/new_pil_images/2020-128 01-0001/1.2.840.113619.2.203.4.2147483647.1420095596.215360.png'
+        # data_dirr_classes = 'data_1/labels/paradise_csi_w_classes.csv'
+
+        pil_images = Image.open(dicom_file_path)
+
+        # Initialize the processor
+        repo = "microsoft/rad-dino"
+        # repo = "google/vit-base-patch16-224-in21k"
+        processor = AutoImageProcessor.from_pretrained(repo)
+
+        # Preprocess the DICOM image 
+        """The processor takes a PIL image, performs resizing, center-cropping, and
+        intensity normalization using stats from MIMIC-CXR, and returns a
+        dictionary with a PyTorch tensor ready for the encoder"""
+        inputs_dic = processor(images=pil_images, return_tensors="pt")
+        input_tensor = inputs_dic['pixel_values'].squeeze()
+
+        with torch.no_grad():
+            logits = model(input_tensor)[:, -1, :]
+        predicted_label = torch.argmax(logits, dim=-1).item()
+
+        def get_imag_class():
+
+            image_class_df = pd.read_csv(data_dirr_classes) 
+
+            number_img = dicom_file_path.split('/')[-2].split('-')[-1]
+            number_df = image_class_df[image_class_df.number == int(number_img)]
+
+            classe_label = list(number_df.classes_label)[0]
+            class_ = list(number_df.classes)[0]
+
+            return classe_label, class_, number_img
+        
+        x = get_imag_class()
+
+        return x, "AHF_risk = 4.4%" if predicted_label == 0 else "AHF_risk = 25.8%" if predicted_label == 1 else 'AHF_risk = 60.3%'
+    
+    def compute_AUCs(gt, pred):
+        """Computes Area Under the Curve (AUC) from prediction scores.
+
+        Args:
+            gt: Pytorch tensor on GPU, shape = [n_samples, n_classes]
+            true binary labels.
+            pred: Pytorch tensor on GPU, shape = [n_samples, n_classes]
+            can either be probability estimates of the positive class,
+            confidence values, or binary decisions.
+
+        Returns:
+            List of AUROCs of all classes.
+        """
+
+        n_classes = 3
+        AUROCs = []
+        gt_np = gt.cpu().numpy()
+        pred_np = pred.cpu().numpy()
+        for i in range(n_classes):
+            AUROCs.append(roc_auc_score(gt_np[:, i], pred_np[:, i]))
+
+        return AUROCs
+
+    def get_performance_per_class(self, testloader, model, device):
+
+        classes = ['AHF_risk = 4.4%', 'AHF_risk = 25.8%', 'AHF_risk = 60.3%']
+
+        # prepare to count predictions for each class
+        correct_pred = {classname: 0 for classname in classes}
+        total_pred = {classname: 0 for classname in classes}
+
+        # again no gradients needed
+        with torch.no_grad():
+            with tqdm(total=len(testloader*16)) as pbar:
+                for samples_batch in testloader:
+
+                    input_img = Variable(samples_batch[0]).to(device)
+                    label = Variable(samples_batch[1]).to(device)
+                    # target_class = samples_batch[3][0]
+                    
+                    logits = model(input_img)
+
+                    # collect the correct predictions for each class
+                    for label, predicted_label in zip(label, logits):
+
+                        predicted_label = torch.argmax(predicted_label, dim=-1).item()
+                        if  predicted_label == label.item():
+                            correct_pred[classes[label]] += 1
+                        total_pred[classes[label]] += 1
+                        pbar.update()
+
+                print(correct_pred)
+                print(total_pred)
+
+
+        # print accuracy for each class
+        for classname, correct_count in correct_pred.items():
+            accuracy = 100 * float(correct_count) / total_pred[classname]
+            print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')        
 

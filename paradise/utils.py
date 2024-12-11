@@ -2,10 +2,11 @@ import json
 import logging
 import shutil
 import traceback
-from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
+
 
 from sklearn.metrics import confusion_matrix, balanced_accuracy_score, precision_recall_fscore_support
 
@@ -118,6 +119,7 @@ def convert_tensorbord_to_csv(folderpath, folder_to_save):
             traceback.print_exc()
         return runlog_data
     path=folderpath #folderpath
+    print(path)
     df=tflog2pandas(path)
     df.to_csv(f'{folder_to_save}/loss_curve.csv')
 
@@ -251,51 +253,51 @@ def stat_difference(actual, predicted):
     diffs = [val1 - val2 for val1, val2 in zip(actual, predicted)]
     return diffs
 
-def convert_tensorbord_to_csv(folderpath, folder_to_save):
+# def convert_tensorbord_to_csv(folderpath, folder_to_save):
 
-    # Extraction function
-    def tflog2pandas(path):
-        runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
-        try:
-            event_acc = EventAccumulator(path)   
-            event_acc.Reload()
-            tags = event_acc.Tags()["scalars"]
-            for tag in tags:
-                event_list = event_acc.Scalars(tag)
-                values = list(map(lambda x: x.value, event_list))
-                step = list(map(lambda x: x.step, event_list))
-                r = {"metric": [tag] * len(step), "value": values, "step": step}
-                r = pd.DataFrame(r)
+#     # Extraction function
+#     def tflog2pandas(path):
+#         runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
+#         try:
+#             event_acc = EventAccumulator(path)   
+#             event_acc.Reload()
+#             tags = event_acc.Tags()["scalars"]
+#             for tag in tags:
+#                 event_list = event_acc.Scalars(tag)
+#                 values = list(map(lambda x: x.value, event_list))
+#                 step = list(map(lambda x: x.step, event_list))
+#                 r = {"metric": [tag] * len(step), "value": values, "step": step}
+#                 r = pd.DataFrame(r)
 
-                runlog_data = pd.concat([runlog_data, r])
+#                 runlog_data = pd.concat([runlog_data, r])
 
-        # Dirty catch of DataLossError
-        except Exception:
-            print("Event file possibly corrupt: {}".format(path))
-            traceback.print_exc()
-        return runlog_data
-    path=folderpath #folderpath
-    df=tflog2pandas(path)
-    df.to_csv(f'{folder_to_save}/loss_curve.csv') 
+#         # Dirty catch of DataLossError
+#         except Exception:
+#             print("Event file possibly corrupt: {}".format(path))
+#             traceback.print_exc()
+#         return runlog_data
+#     path=folderpath #folderpath
+#     df=tflog2pandas(path)
+#     df.to_csv(f'{folder_to_save}/loss_curve.csv') 
 
-def plot_tensorbord(csv_file, png_file, title, y_ax):
-    data = pd.read_csv(csv_file)
+# def plot_tensorbord(csv_file, png_file, title, y_ax):
+#     data = pd.read_csv(csv_file)
 
-    loss_train = list((data[data.metric.isin(['/loss-train'])].value))
-    loss_val =  list((data[data.metric.isin(['/loss-val'])].value))
+#     loss_train = list((data[data.metric.isin(['/loss-train'])].value))
+#     loss_val =  list((data[data.metric.isin(['/loss-val'])].value))
 
-    min_train = '{:05.3f}'.format(min(loss_train))
-    min_val = '{:05.3f}'.format(min(loss_val))
+#     min_train = '{:05.3f}'.format(min(loss_train))
+#     min_val = '{:05.3f}'.format(min(loss_val))
 
-    plt.figure()
-    plt.title(f'{title} (val : {min_val}, train : {min_train})')
-    plt.plot(loss_train, label='Training')  
-    plt.plot(loss_val, label='Validation')  
-    plt.xlabel('Epochs')
-    plt.ylabel(y_ax)
-    plt.legend()
-    plt.savefig(png_file)
-    plt.close()
+#     plt.figure()
+#     plt.title(f'{title} (val : {min_val}, train : {min_train})')
+#     plt.plot(loss_train, label='Training')  
+#     plt.plot(loss_val, label='Validation')  
+#     plt.xlabel('Epochs')
+#     plt.ylabel(y_ax)
+#     plt.legend()
+#     plt.savefig(png_file)
+#     plt.close()
 
 def plot_box_plot(data_list, data_name, fn_save):
 
@@ -315,5 +317,25 @@ def conf_matrix(targets, predicted_classes):
     plt.ylabel('Actual')
     plt.show()
 
+def add_class_for_scores():
 
+    paradise_csi = pd.read_csv('data_1/labels/paradise_csi.csv')
+    print(paradise_csi.columns)
+
+    df = pd.DataFrame(paradise_csi)
+
+    # Add the new column based on conditions
+    def classify_csi(csi):
+        if csi <= 1.3:
+            return 'AHF_risk = 4.4%'
+        elif 1.3 < csi <= 2.2:
+            return 'AHF_risk = 25.8%'
+        else:
+            return 'AHF_risk = 60.3%'
+
+    df['classes'] = df['csi'].apply(classify_csi)
+    df['classes_label'] = df['classes'].map({'AHF_risk = 4.4%':0, 'AHF_risk = 25.8%':1, 'AHF_risk = 60.3%':2})
+    df.to_csv('data_1/labels/paradise_csi_w_classes.csv')
+
+    print(df['classes_label'].value_counts())
 
