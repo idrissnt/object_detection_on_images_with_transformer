@@ -49,15 +49,15 @@ class XRayDataset(Dataset):
 
         pil_image = Image.open(dicom_file_path).convert('RGB')
 
-        # input_google = img_process_google(pil_image) # cheXNet_3
-        # inputs_microsoft = img_process_microsoft(pil_image) # cheXNet_2
-        input_chexnet = img_process_chexnet(pil_image)[-1] # cheXNet_1
+        # inputs = img_process_google(pil_image) # cheXNet_3
+        inputs = img_process_microsoft(pil_image) # cheXNet_2
+        # inputs = img_process_chexnet(pil_image)[-1] # cheXNet_1
         
         label = torch.tensor(classe_label, dtype=torch.int64)
         csi_regions = torch.tensor(csi_regions, dtype=torch.float64)
         mean_csi = torch.tensor(mean_csi, dtype=torch.float64)
 
-        return input_chexnet, label, csi_regions, mean_csi, classe
+        return inputs, label, csi_regions, mean_csi, classe
 
 def img_process_microsoft(pil_image):
     # Initialize the processor
@@ -119,7 +119,6 @@ def img_process_google(pil_image):
         else (image_processor.size["height"], image_processor.size["width"]))
     
     _transforms = Compose([RandomResizedCrop(size), ToTensor(), normalize])
-
     pil_image = _transforms(pil_image)
 
     return pil_image

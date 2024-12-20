@@ -45,14 +45,15 @@ class Exp_Main(object):
         model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _calc_loss_batch(self, input_batch, target_batch, target_csi_regions, model):
+    def _calc_loss_batch(self, input_batch, target_batch, target_csi_regions, target_mean_csi, model):
 
-        logit_class, logit_csi_scores, logit_mean_csi = model(input_batch)
+        logit_class, logit_csi_scores, logit_mean_csi, logit_mean_csi_compute = model(input_batch)
 
-        loss_csi_score = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
-        loss_class = nn.functional.cross_entropy(logit_class, target_batch)
+        loss_mean_csi = nn.functional.mse_loss(logit_mean_csi, target_mean_csi)
+        # loss_csi_score = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
+        # loss_class = nn.functional.cross_entropy(logit_class, target_batch)
 
-        loss = loss_class + loss_csi_score
+        loss = loss_mean_csi
 
         return loss
 
@@ -68,14 +69,16 @@ class Exp_Main(object):
                 for samples_batch in vali_loader:
 
                     input_img = Variable(samples_batch[0]).to(self.device)
+
                     target_class = Variable(samples_batch[1]).to(self.device)
                     target_csi_regions = Variable(samples_batch[2]).type(torch.FloatTensor).to(self.device)
+                    target_mean_csi = Variable(samples_batch[3]).type(torch.FloatTensor).to(self.device)
 
                     if torch.isnan(input_img).any():
                         nan_val=+1
                         continue
 
-                    loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, self.model)
+                    loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, target_mean_csi, self.model)
 
                     total_loss.append(loss)
                     pbar.update()
@@ -99,6 +102,7 @@ class Exp_Main(object):
                 input_img = Variable(samples_batch[0]).to(self.device)
                 target_class = Variable(samples_batch[1]).to(self.device)
                 target_csi_regions = Variable(samples_batch[2]).type(torch.FloatTensor).to(self.device)
+                target_mean_csi = Variable(samples_batch[3]).type(torch.FloatTensor).to(self.device)
 
                 # input_chexnet, label, csi_regions, mean_csi, classe = []
 
@@ -106,7 +110,7 @@ class Exp_Main(object):
                     nan_val=+1
                     continue
                 
-                loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, self.model)
+                loss = self._calc_loss_batch(input_img, target_class, target_csi_regions, target_mean_csi, self.model)
 
                 # back propagration : calculating the gradients
                 loss.backward(retain_graph=True) 
@@ -311,3 +315,22 @@ class Exp_Main(object):
             accuracy = 100 * float(correct_count) / total_pred[classname]
             print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')        
 
+    def constrastive_loss(self, features, temperature = 0.5):
+
+        features = nn.functional.normalize(features, dim=1)
+        
+        # compute pairwise cosine similarity
+        similarity_matrix = torch.matmul(features, features.T)
+
+        # create positve pairs mask
+        batch_size = features.size(0)
+        labels = torch.arange(batch_size, device= self.device)
+        positive_mask = torch.eq(labels[:, None], labels[None, :]).float()
+
+        # constrastive loss 
+        logits = similarity_matrix/temperature
+        logits_exp = torch.exp(logits)
+        positive_logits_exp = logits_exp*positive_mask
+        loss = -torch.log(positive_logits_exp/logits_exp.sum(dim=1, keepdim=True))
+
+        return loss.mean()
