@@ -1,6 +1,7 @@
 import logging
 
 from PIL import Image
+import numpy as np
 import pandas as pd
 from transformers import AutoImageProcessor
 
@@ -25,7 +26,6 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 import warnings
 warnings.filterwarnings('ignore')
 
-
 class Exp_Main(object):
     def __init__(self, args):
 
@@ -47,13 +47,19 @@ class Exp_Main(object):
 
     def _calc_loss_batch(self, input_batch, target_batch, target_csi_regions, target_mean_csi, model):
 
-        logit_class, logit_csi_scores, logit_mean_csi, logit_mean_csi_compute = model(input_batch)
+        logit_class, logit_csi_scores, logit_mean_csi = model(input_batch)
+        # print(logit_class.shape, logit_csi_scores.shape, logit_mean_csi.shape)
+        # print(logit_class)
+        # print()
+        # print(logit_csi_scores)
+        # print()
+        # print(logit_mean_csi)
 
         loss_mean_csi = nn.functional.mse_loss(logit_mean_csi, target_mean_csi)
-        # loss_csi_score = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
-        # loss_class = nn.functional.cross_entropy(logit_class, target_batch)
+        loss_csi_scores = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
+        loss_class = nn.functional.cross_entropy(logit_class, target_batch)
 
-        loss = loss_mean_csi
+        loss = loss_mean_csi + loss_csi_scores + loss_class
 
         return loss
 
@@ -135,7 +141,7 @@ class Exp_Main(object):
         validation_loss = self.validation(batch_val_data)
 
         print()
-        logging.info('Computing accuracy...')
+        logging.info('Computing accuracies...')
         train_accuracy, class_target_train, class_pred_train = self.calc_accuracy_loader(batch_train_data, self.model, self.device, 'Training', [], [])
         val_accuracy, class_target_val, class_pred_val = self.calc_accuracy_loader(batch_val_data, self.model, self.device, 'Validation', [], [])
 
@@ -167,6 +173,10 @@ class Exp_Main(object):
         with tqdm(total=len(data_loader)) as pbar:
             for i, samples_batch  in enumerate(data_loader):
                 input_batch, target_batch = samples_batch[0], samples_batch[1]
+
+                target_csi_regions = samples_batch[2]
+                target_mean_csi = samples_batch[3]
+
                 if i < num_batches:
                     input_batch = input_batch.to(device)
                     target_batch = target_batch.to(device)
@@ -193,26 +203,6 @@ class Exp_Main(object):
         # print(f"{accuracy_name} accuracy: {accuracy*100:.2f}%")
 
         return accuracy, class_target, class_pred
-    
-    def calc_loss_loader(self, data_loader, model, device):
-
-        model.to(device)
-        total_loss = 0.
-
-        if len(data_loader) == 0:
-            return float("nan")
-        
-        num_batches = len(data_loader)
-
-        for i, (input_batch, target_batch) in enumerate(data_loader):
-            if i < num_batches:
-                loss = self._calc_loss_batch(
-                    input_batch, target_batch, model, device
-                )
-                total_loss += loss.item()
-            else:
-                break
-        return total_loss / num_batches
     
     def classify_review(self, model, dicom_file_path, data_dirr_classes):
 
@@ -278,59 +268,62 @@ class Exp_Main(object):
 
         return AUROCs
 
-    def get_performance_per_class(self, testloader, model, device):
+    def get_performance_per_class(self, testloader, model, device, fname = 'results_test_set'):
 
-        classes = ['AHF_risk = 4.4%', 'AHF_risk = 25.8%', 'AHF_risk = 60.3%']
+        df_results  = pd.DataFrame()
+        class_pred, class_label =  [], []
+        sci_scores_pred, sci_scores_label = [], []
+        mean_csi_pred, mean_csi_label = [], []
+        number_fnames , id_number_fnames = [], []
 
-        # prepare to count predictions for each class
-        correct_pred = {classname: 0 for classname in classes}
-        total_pred = {classname: 0 for classname in classes}
+        dic = {'class_1 ':'AHF_risk = 4.4%', 'class_2':'AHF_risk = 25.8%', 'class_3': 'AHF_risk = 60.3%'}
 
         # again no gradients needed
         with torch.no_grad():
-            with tqdm(total=len(testloader*16)) as pbar:
+            with tqdm(total=len(testloader)) as pbar:
                 for samples_batch in testloader:
 
                     input_img = Variable(samples_batch[0]).to(device)
-                    label = Variable(samples_batch[1]).to(device)
-                    # target_class = samples_batch[3][0]
+                    label_classification = Variable(samples_batch[1]).to(device)
+                    target_csi_regions = samples_batch[2]
+                    target_mean_csi = samples_batch[3]
+                    number_fname , id_number_fname = samples_batch[-1], samples_batch[-2]
                     
-                    logits = model(input_img)
+                    classification_output, csi_scores, mean_csi = model(input_img)
 
-                    # collect the correct predictions for each class
-                    for label, predicted_label in zip(label, logits):
+                    # get the correct prediction indice
+                    predicted_class = torch.argmax(classification_output, dim=-1).item()
 
-                        predicted_label = torch.argmax(predicted_label, dim=-1).item()
-                        if  predicted_label == label.item():
-                            correct_pred[classes[label]] += 1
-                        total_pred[classes[label]] += 1
-                        pbar.update()
+                    class_pred.append(predicted_class), class_label.append(label_classification.to('cpu').item())
+                    
+                    sci_scores_pred.append([round(val, 2) for val in  csi_scores.to('cpu')[0].tolist()])
+                    sci_scores_label.append(target_csi_regions[0].tolist())
 
-                print(correct_pred)
-                print(total_pred)
+                    mean_csi_pred.append(round(mean_csi.item(), 2)), 
+                    mean_csi_label.append(round(target_mean_csi.item(), 2))
 
+                    number_fnames.append(str(number_fname.item())) , id_number_fnames.append(str(id_number_fname.item()))
+                    
+                    pbar.update()
 
-        # print accuracy for each class
-        for classname, correct_count in correct_pred.items():
-            accuracy = 100 * float(correct_count) / total_pred[classname]
-            print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')        
+        df_results['number_fname'] = number_fnames
+        df_results['id_number_fname'] = id_number_fnames
+        df_results['class_label'] = class_label
+        df_results['class_pred'] = class_pred
+        df_results['mean_csi_scores_label'] = np.round(np.mean(sci_scores_label, axis=1), 2)
+        df_results['mean_csi_scores_pred'] = np.round(np.mean(sci_scores_pred, axis=1), 2)
+        df_results['mean_csi_label'] = mean_csi_label
+        df_results['mean_csi_pred'] = mean_csi_pred
 
-    def constrastive_loss(self, features, temperature = 0.5):
+        # assume df is your DataFrame
 
-        features = nn.functional.normalize(features, dim=1)
-        
-        # compute pairwise cosine similarity
-        similarity_matrix = torch.matmul(features, features.T)
+        df_results['mean_csi_scores_label_binned'] = pd.cut(df_results['mean_csi_scores_label'], bins=[-float('inf'), 1.3, 2.2, float('inf')], labels=[0, 1, 2])
+        df_results['mean_csi_scores_pred_binned'] = pd.cut(df_results['mean_csi_scores_pred'], bins=[-float('inf'), 1.3, 2.2, float('inf')], labels=[0, 1, 2])
+        df_results['mean_csi_label_binned'] = pd.cut(df_results['mean_csi_label'], bins=[-float('inf'), 1.3, 2.2, float('inf')], labels=[0, 1, 2])
+        df_results['mean_csi_pred_binned'] = pd.cut(df_results['mean_csi_pred'], bins=[-float('inf'), 1.3, 2.2, float('inf')], labels=[0, 1, 2])
 
-        # create positve pairs mask
-        batch_size = features.size(0)
-        labels = torch.arange(batch_size, device= self.device)
-        positive_mask = torch.eq(labels[:, None], labels[None, :]).float()
+        df_results['sci_scores_label'] = sci_scores_label
+        df_results['sci_scores_pred'] = sci_scores_pred
 
-        # constrastive loss 
-        logits = similarity_matrix/temperature
-        logits_exp = torch.exp(logits)
-        positive_logits_exp = logits_exp*positive_mask
-        loss = -torch.log(positive_logits_exp/logits_exp.sum(dim=1, keepdim=True))
-
-        return loss.mean()
+        dir_to_save = 'experiments/Rad_Dino_msc_csi/results'
+        df_results.to_csv(f'{dir_to_save}/{fname}__results.csv')      

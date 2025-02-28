@@ -12,8 +12,9 @@ class ViT(timm.models.vision_transformer.VisionTransformer):
     def __init__(self, **kwargs):
         super(ViT, self).__init__(**kwargs)
 
-        self.sigmoid = nn.Sigmoid()
-        self.head = nn.Linear(self.embed_dim, 6)
+        self.csi_scores = nn.Linear(self.embed_dim, 6)
+        self.classification_output = nn.Linear(self.embed_dim, 3)
+        self.mean_csi = nn.Linear(self.embed_dim, 1)
 
         # print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
 
@@ -39,8 +40,10 @@ class ViT(timm.models.vision_transformer.VisionTransformer):
         x = self.fc_norm(x)
         x = self.head_drop(x)
 
-        x = self.head(x)
-        return x if pre_logits else self.sigmoid(x)
+        csi_scores = self.csi_scores(x)
+        classification_output = self.classification_output(x)
+        mean_csi = self.mean_csi(x)
+        return classification_output, csi_scores, mean_csi
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.forward_features(x)

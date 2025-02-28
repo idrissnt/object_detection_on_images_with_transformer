@@ -1,9 +1,9 @@
 import os
 import sys
 
+from matplotlib import pyplot as plt
+import numpy as np
 import pandas as pd
-from tqdm import tqdm
-from torch.autograd import Variable
 
 from exp.exp_main import Exp_Main
 
@@ -15,6 +15,8 @@ import utils
 # from exp.exp_main import Exp_Main
 from data_provider.dataloader import get_data
 
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+import seaborn as sns
 import time
 import torch
 import logging
@@ -36,7 +38,7 @@ parser.add_argument('--data_dirr', type=str, default='data_1', help='directory o
 
 # optimization 
 parser.add_argument('--learning_rate', type=float, default=1e-5, help='optimizer learning rate') # 
-parser.add_argument('--batch_size', type=int, default=16, help='batch size')
+parser.add_argument('--batch_size', type=int, default=8, help='batch size')
 parser.add_argument('--num_epochs', type=int, default=30, help='number of epochs') 
 parser.add_argument('--use_amp', type=bool, default=False, help='use automatic mixed precision training')
 
@@ -49,7 +51,8 @@ if __name__ == '__main__':
     torch.manual_seed(123)
 
     # create directory to save if it does not exist
-    experiment_path = f'{args.experiment_path}{args.model}_1'
+    args.model = 'Rad_Dino'
+    experiment_path = f'{args.experiment_path}{args.model}'
     if not os.path.exists(experiment_path):
         os.makedirs(experiment_path)
 
@@ -57,16 +60,10 @@ if __name__ == '__main__':
     utils.set_logger(os.path.join(experiment_path, 'train.log'))
 
     logging.info('loading dataset...')
-    # batch_train_data, batch_val_data, batch_test_data = get_data(args.batch_size)
-    # batch_size = 16
-    batch_size = 8
-    batch_train_data, batch_val_data, batch_test_data = get_data(batch_size)
+    batch_train_data, batch_val_data, batch_test_data = get_data(args.batch_size)
 
     logging.info('Instantiating the model ({})...'.format(args.model))
     main_exp = Exp_Main(args)
-
-    logging.info("Open tensorboard writer")
-    writer = SummaryWriter(experiment_path + '/runs/' + args.model) 
 
     logging.info("Starting with... {} model".format(args.model))
 
@@ -85,6 +82,9 @@ if __name__ == '__main__':
             train_loss, val_loss, train_accuracy, val_accuracy = main_exp\
                 .train_and_validation(batch_train_data, batch_val_data)
                 
+            logging.info("Open tensorboard writer")
+            writer = SummaryWriter(experiment_path + '/runs/' + args.model) 
+
             # Write loss and metric on tensorboard
             writer.add_scalar('/loss-train', train_loss, epoch +1) 
             writer.add_scalar('/loss-val', val_loss, epoch + 1) 
@@ -101,7 +101,7 @@ if __name__ == '__main__':
                                     is_best=is_best,
                                     checkpoint=experiment_path)
             
-            # If best_eval, best_save_path
+            # Update the new best loss
             if is_best:
                 logging.info("- Found new best scrore")
                 best_loss = val_loss 
@@ -114,32 +114,57 @@ if __name__ == '__main__':
         model_to_load = main_exp.model
         utils.load_checkpoint(os.path.join(experiment_path, 'best.pth.tar'), model_to_load)
 
-        file_to_save = f'{experiment_path}/results'
-        if not os.path.exists(file_to_save): 
-            os.makedirs(file_to_save)
+        total_loss = main_exp.validation(batch_val_data)
 
-        ########## tes model performances #############
-        main_exp.get_performance_per_class(batch_val_data, model_to_load, device)
+        # file_to_save = f'{experiment_path}/results'
+        # if not os.path.exists(file_to_save): 
+        #     os.makedirs(file_to_save)
+
+        # results = 'wkdir/results/'
+        # if not os.path.exists(results):
+        #     os.mkdir(results)
+
+        # ########## test model performances #############
+        # # main_exp.get_performance_per_class(batch_val_data, model_to_load, device, fname = 'results_val_set')
+
+        # data_to_save = 'experiments/Rad_Dino_msc_csi/results/'
+        # data_used = 'test'
+        # data = pd.read_csv(f'{data_to_save}results_{data_used}_set.csv')
+        # y_true, y_pred = np.array(data['class_label']),  np.array(data['class_pred']) 
+
+        # cm = confusion_matrix(y_true, y_pred)
+
+        # plt.figure(figsize=(8, 6))
+        # sns.heatmap(cm, annot=True, cmap="YlGnBu")
+        # plt.xlabel("Predicted labels")
+        # plt.ylabel("True labels")
+        # plt.title("Confusion Matrix")
+        # plt.savefig(f'{data_to_save}confusion_matrix_{data_used}.png')
+        # plt.show()
+
+        # print(cm)
+        # print(cm.diagonal().sum())
+
+        # precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='weighted')
+        # accuracy = (y_pred == y_true).sum().item() / len(y_true)
+
+        # print(f'Precision: {precision}')
+        # print(f'Recall: {recall}')
+        # print(f'F1: {f1}')
+        # print(f'Accuracy: {accuracy}')
+
+        # precision_per_class, recall_per_class, f1_per_class, _ = precision_recall_fscore_support(y_true, y_pred, average=None)
+
+        # print(f'Precision per class: {precision_per_class}')
+        # print(f'Recall per class: {recall_per_class}')
+        # print(f'F1 per class: {f1_per_class}')
+
+        # y_true, y_pred = np.array(data['sci_scores_label']),  np.array(data['sci_scores_pred']) 
+        # print(y_true[0], y_pred[0])
         
-        #  plot loss functions
-        file = 'experiments/Rad_Dino_1/runs/Rad_Dino/'
-        utils.convert_tensorbord_to_csv(file, file_to_save)
-        csv_file = 'experiments/cheXNet_1/results/loss_curve.csv'
-        png_file = 'experiments/cheXNet_1/results/loss_function.png'
-        utils.plot_tensorbord(csv_file, png_file, 'cheXNet_1', 'CE')
 
-        # To asses use main_exp.evaluation 
-        
 
-    # # dic = {}
-    # # for name, data in zip(['val_loss','test_loss' ], [batch_val_data, batch_test_data]):
-    # #     loss_fn =main_exp._select_criterion(all_class_weights)
-    # #     loss_val =  main_exp.validation(model_to_load, data, loss_fn)
 
-    # #     dic[name]= loss_val.item()
-
-    # # save_path = os.path.join(file_to_save, "value_of_loss_.json")
-    # # utils.save_dict_to_json(dic, save_path)
         
 
 

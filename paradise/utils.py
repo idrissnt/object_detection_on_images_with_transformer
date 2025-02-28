@@ -8,7 +8,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 
-from sklearn.metrics import confusion_matrix, balanced_accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix
 
 import os
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
@@ -18,15 +18,23 @@ from tqdm import tqdm
 
 def drop_nan_df(input_dir = 'data_1/labels/paradise_csi', output_dir = 'data_1/labels/paradise_csi_drop_nan'):
 
+    """
+    Reads a CSV file, removes rows with missing values, and saves the cleaned data to a new CSV file.
+
+    Args:
+        input_dir (str): Path to the input CSV file (default: 'data_1/labels/paradise_csi')
+        output_dir (str): Path to save the cleaned CSV file (default: 'data_1/labels/paradise_csi_drop_nan')
+
+    Returns:
+        None
+    """
+    # Read the input CSV file
     df = pd.read_csv(f'{input_dir}.csv')
-    # df = pd.DataFrame(data=df, columns=['number','id_number', 'csi_total','csi', 'right_sup', 
-    #                                                         'left_sup','right_mid',
-    #                                                         'left_mid','right_mid',])
     
-    missing_values = df.isnull().sum()
-    # print(missing_values[missing_values > 0])  # Columns with missing values
+    # Remove rows with missing values
     df_cleaned = df.dropna()
     
+    # Save the cleaned data to a new CSV file
     df_cleaned.to_csv(f'{output_dir}.csv')
 
 def set_logger(log_path):
@@ -97,8 +105,30 @@ def plot_tensorbord(csv_file, png_file, title, y_ax):
 
 def convert_tensorbord_to_csv(folderpath, folder_to_save):
 
+    """
+    Converts TensorFlow event logs to a CSV file.
+
+    Args:
+        folderpath (str): Path to the folder containing TensorFlow event log files.
+        folder_to_save (str): Path to the folder where the resulting CSV file will be saved.
+
+    Returns:
+        None
+    """
+
     # Extraction function
     def tflog2pandas(path):
+
+        """
+        Extracts scalar values from a TensorFlow event log file and returns a Pandas DataFrame.
+
+        Args:
+            path (str): Path to the TensorFlow event log file.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the extracted scalar values.
+        """
+
         runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
         try:
             event_acc = EventAccumulator(path)   
@@ -299,3 +329,22 @@ def replace_nan(file_csv):
     df.replace(r'^\s*$', float('nan'), regex=True)
     df.fillna(0, inplace=True)
     df.to_csv('yep_.csv')
+
+def confusion_matrix_per_class(y_true, y_pred, num_classes):
+    """
+    Calculates the confusion matrix for each class.
+
+    Args:
+        y_true (array-like): True class labels.
+        y_pred (array-like): Predicted class labels.
+        num_classes (int): Number of classes.
+
+    Returns:
+        list: A list of confusion matrices, one for each class.
+    """
+    confusion_matrices = []
+    for i in range(num_classes):
+        cm = confusion_matrix(y_true == i, y_pred == i)
+        confusion_matrices.append(cm)
+
+    return confusion_matrices

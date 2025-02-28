@@ -45,7 +45,12 @@ class XRayDataset(Dataset):
     def __getitem__(self, idx):
 
         dicom_file_path = self.dicom_files_path[idx]
-        dicom_file_path, classe_label, classe, csi_regions, mean_csi = get_imag_scores(dicom_file_path, self.image_scores_df)
+
+        (
+            dicom_file_path, classe_label, 
+            classe, csi_regions, mean_csi, 
+            number_fname, id_number_fname
+        ) = get_imag_scores(dicom_file_path, self.image_scores_df)
 
         pil_image = Image.open(dicom_file_path).convert('RGB')
 
@@ -53,11 +58,11 @@ class XRayDataset(Dataset):
         inputs = img_process_microsoft(pil_image) # cheXNet_2
         # inputs = img_process_chexnet(pil_image)[-1] # cheXNet_1
         
-        label = torch.tensor(classe_label, dtype=torch.int64)
+        label_classification = torch.tensor(classe_label, dtype=torch.int64)
         csi_regions = torch.tensor(csi_regions, dtype=torch.float64)
         mean_csi = torch.tensor(mean_csi, dtype=torch.float64)
 
-        return inputs, label, csi_regions, mean_csi, classe
+        return inputs, label_classification, csi_regions, mean_csi, classe, number_fname , id_number_fname
 
 def img_process_microsoft(pil_image):
     # Initialize the processor
@@ -72,23 +77,6 @@ def img_process_microsoft(pil_image):
     inputs = inputs_dic['pixel_values'].squeeze()
     
     return inputs
-
-def split_image_into_zones(image, num_rows=3, num_cols=2):
-    width, height = image.size
-    zones = []
-    zone_width = width // num_cols
-    zone_height = height // num_rows
-
-    for i in range(num_rows):
-        for j in range(num_cols):
-            left = j * zone_width
-            upper = i * zone_height
-            right = (j + 1) * zone_width
-            lower = (i + 1) * zone_height
-            zone = image.crop((left, upper, right, lower))
-            zones.append(zone)
-
-    return zones
 
 def img_process_chexnet(pil_image):
 
@@ -134,9 +122,12 @@ def get_imag_scores(img_path, df_scores):
     classe_label = list(number_df.classes_label)[0]
     classe = list(number_df.classes)[0]
 
-    return img_path, classe_label, classe, csi_regions, mean_csi
+    number_fname , id_number_fname  = list(number_df.number)[0], list(number_df.id_number)[0]
+
+    return img_path, classe_label, classe, csi_regions, mean_csi, number_fname , id_number_fname
 
 memory = Memory(location='cache_directory_', verbose=0) 
+# memory = Memory(location='cache_directory_test', verbose=0) 
 @memory.cache
 
 def get_data(batch_size): 
@@ -171,6 +162,7 @@ def get_data(batch_size):
             data_set,
             batch_size = batch_size,
             sampler=test_subsampler)
+    
     print()
     logging.info(f'Loading {len(train_subsampler)} for training...')
     batch_train_data = [samples_batch for _, samples_batch in enumerate(tqdm(batch_train_data))]
@@ -188,9 +180,9 @@ def get_data(batch_size):
 
 # dataset = XRayDataset()
 # # print(dataset.image_scores_df)
-# input_chexnet, label, csi_regions, mean_csi, classe = dataset[5]
+# inputs, label_classification, csi_regions, mean_csi, classe, number_fname , id_number_fname = dataset[5]
 
-# print(label, csi_regions, mean_csi, classe)
+# print(inputs.shape, label_classification, csi_regions, mean_csi, classe)
 # # print(x.shape, y,  fname)
 # # x = [dataset[i] for i in tqdm(range((len(dataset.dicom_files_path))))]
 
