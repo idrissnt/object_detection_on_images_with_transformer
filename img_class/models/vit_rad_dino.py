@@ -3,7 +3,7 @@ from transformers import AutoModel
 from transformers import AutoImageProcessor
 # import torchvision
 
-################################ ViT from microsof for chest radiography (CXR) #####################
+################################ ViT from microsoft for chest radiography (CXR) #####################
 
 class CustomDinoModel(nn.Module):
     def __init__(self):

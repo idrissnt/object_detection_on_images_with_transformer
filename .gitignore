@@ -25,7 +25,5 @@ experiments
 .vscode
 *.h5
 *.md
-paradise/Archimed_plugin
 paradise/test
-paradise/previous_resnet
 *.ipynb

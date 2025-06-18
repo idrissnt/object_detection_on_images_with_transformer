@@ -20,15 +20,10 @@ from joblib import Memory
 class XRayDataset(Dataset):
     def __init__(self):
 
-        extrat_files = ["0528", "0725", "0760", "0763", "0875", "0933", "0994", "1110", "1111", "1283", "1294", "1329",
-                "1349", "1353", "1365", "1424", "1437", "1520", "1708", "1730", "1739", "1741", "1743",
-                "1774", "1776", "1821", "1832", "1833", "1834", "1842", "1877", "1891", "1892", "1899",
-                "1904", "1911", "1916", "1924", "1930", "1942", "1943", "1959", "1977", "1979", "2017",
-                "2022", "2087", "2091", "2157", "2158", "2176", "2185", "2190", "2192", "2196", "2233",
-                "2235", "2242", "2255", "2267", "2281"]
+        extrat_files = ["2281"]
 
-        data_dirr_mage = 'data_1/new_pil_images/*/*'
-        data_dirr_scores = 'data_1/labels/paradise_csi_w_classes_w_non_nan.csv'
+        data_dirr_mage = 'data_1/new_pil_images'
+        data_dirr_scores = 'data_1/labels.csv'
         image_scores_df = pd.read_csv(data_dirr_scores)
 
         dicom_files_path = sorted(glob.glob(data_dirr_mage)) # type == list

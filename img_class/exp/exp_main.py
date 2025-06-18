@@ -48,13 +48,6 @@ class Exp_Main(object):
     def _calc_loss_batch(self, input_batch, target_batch, target_csi_regions, target_mean_csi, model):
 
         logit_class, logit_csi_scores, logit_mean_csi = model(input_batch)
-        # print(logit_class.shape, logit_csi_scores.shape, logit_mean_csi.shape)
-        # print(logit_class)
-        # print()
-        # print(logit_csi_scores)
-        # print()
-        # print(logit_mean_csi)
-
         loss_mean_csi = nn.functional.mse_loss(logit_mean_csi, target_mean_csi)
         loss_csi_scores = nn.functional.mse_loss(logit_csi_scores, target_csi_regions)
         loss_class = nn.functional.cross_entropy(logit_class, target_batch)
@@ -109,8 +102,6 @@ class Exp_Main(object):
                 target_class = Variable(samples_batch[1]).to(self.device)
                 target_csi_regions = Variable(samples_batch[2]).type(torch.FloatTensor).to(self.device)
                 target_mean_csi = Variable(samples_batch[3]).type(torch.FloatTensor).to(self.device)
-
-                # input_chexnet, label, csi_regions, mean_csi, classe = []
 
                 if torch.isnan(input_img).any():
                     nan_val=+1
@@ -207,9 +198,6 @@ class Exp_Main(object):
     def classify_review(self, model, dicom_file_path, data_dirr_classes):
 
         model.eval()
-
-        # dicom_file_path = 'data_1/new_pil_images/2020-128 01-0001/1.2.840.113619.2.203.4.2147483647.1420095596.215360.png'
-        # data_dirr_classes = 'data_1/labels/paradise_csi_w_classes.csv'
 
         pil_images = Image.open(dicom_file_path)
 
