@@ -1,4 +1,4 @@
-# Paradise - Chest X-Ray Classification System
+# Chest X-Ray Classification System
 
 img_class is a deep learning framework for chest X-ray image classification and Clinical Severity Index (CSI) scoring. The system supports multiple state-of-the-art models for medical image analysis and provides comprehensive evaluation metrics.
 
